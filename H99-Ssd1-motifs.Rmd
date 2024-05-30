@@ -1,0 +1,405 @@
+---
+title: "Counting Ssd1 motifs in Cryptococcus neoformans H99"
+author: "Edward Wallace"
+date: "30/05/2024"
+output: 
+  html_document:
+      toc: true
+---
+
+# Summary
+
+We are looking for occurrences of the major part of the Ssd1-binding motif, `CNYTCNYT`, in *Cryptococcus neoformans* H99.
+
+We do the search in multiple subsets of the mRNA:
+
+- Separately: 5' UTRs, Coding Sequences, 3'UTRs, from Janbon lab Cryptococcus mRNA annotation accompanying Wallace, Maufrais, et al (2020), https://doi.org/10.5281/zenodo.3627875 
+- Summed over those mRNA regions
+
+Outputs genelists enriched in CNYTCNYT counts in mRNA or just 5'UTR, from 80th and 95th percentile, for GO analysis.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+library(tidyverse)
+library(cowplot)
+theme_set(theme_cowplot(font_size = 12))
+
+library(Biostrings)
+```
+
+
+## Methods: Count occurences of Ssd1 motif CNYTCNYT
+
+We use functions from Biostrings (bioconductor) to find motif instances. 
+This was inspired by [a blogpost from kasper daniel hansen](https://kasperdanielhansen.github.io/genbioconductor/html/Biostrings_Matching.html).
+
+`vcountPattern(pattern = DNAString("CNYTCNYT"), subject = INPUT, fixed = "subject")`
+
+The parameter `fixed = "subject"` allows ambiguous characters in the pattern `CNYTCNYT`, but not in the sequence being searched.
+
+We put all the relevant counts into a tibble/ data frame for easier post-processing.
+
+
+This is modified from the approach used in https://github.com/ewallace/Ssd1_CRACanalysis_2020
+
+
+```{r function_count_CNYTCNYT}
+count_CNYTCNYT <- function(DNAStrings) {
+  # Count CNYTCNYT occurences in a DNAStringSet object
+  vcountPattern(pattern = DNAString("CNYTCNYT"),
+                subject = DNAStrings,
+                fixed = "subject")
+}
+```
+
+
+
+# Load mRNAs, UTRs
+
+```{r load_mRNAs}
+# define fasta filename for 5'UTRs
+H99_5UTR_file <- paste(here::here(), 
+                        "data_in", 
+                        "H99_10p_up12dwn9_5UTRs.fa",
+                        sep= "/")
+# load fasta file as DNA string set
+H99_5UTRs <- readDNAStringSet(H99_5UTR_file)
+# use only the leading gene id for the name
+names(H99_5UTRs) <- names(H99_5UTRs) %>% stringr::str_sub(end = 10L)
+
+# Same for coding sequence
+H99_CDS_file <- paste(here::here(), 
+                        "data_in", 
+                        "H99_10p_up12dwn9_CDS.fa",
+                        sep= "/")
+H99_CDSs <- readDNAStringSet(H99_CDS_file)
+names(H99_CDSs) <- names(H99_CDSs) %>% stringr::str_sub(end = 10L)
+
+# Same for 3'UTR
+H99_3UTR_file <- paste(here::here(), 
+                        "data_in", 
+                        "H99_10p_up12dwn9_3UTRs.fa",
+                        sep= "/")
+H99_3UTRs <- readDNAStringSet(H99_3UTR_file)
+names(H99_3UTRs) <- names(H99_3UTRs) %>% stringr::str_sub(end = 10L)
+
+
+```
+
+
+## Count occurences of Ssd1 motif CNYTCNYT
+
+```{r CNYTCNYT_count}
+CNYTCNYT_count_df <- tibble(id = names(H99_CDSs),
+                            count_5UTR = count_CNYTCNYT(H99_5UTRs[names(H99_CDSs)]),
+                            length_5UTR = width(H99_5UTRs[names(H99_CDSs)]),
+                            count_CDS = count_CNYTCNYT(H99_CDSs),
+                            length_CDS = width(H99_CDSs),
+                            count_3UTR = count_CNYTCNYT(H99_3UTRs[names(H99_CDSs)]),
+                            length_3UTR = width(H99_3UTRs[names(H99_CDSs)]),
+                            count_mRNA = count_5UTR + count_CDS + count_3UTR,
+                            length_mRNA = length_5UTR + length_CDS + length_3UTR
+)
+
+summary(CNYTCNYT_count_df)
+```
+
+Note here we take the sum of motifs in 5'UTR, CDS, 3'UTR as total in mRNA; this will not double-count. It won't miss any motifs at 5'UTR-CDS junction because it's not possible to have an ATG start codon in the CNYTCNYT motif. It will miss a motif at the CDS-3'UTR junction only if the last T of CNYTCNYT is the first T of the stop codon. So may under-count by 1.
+
+
+## Write list of genes out
+
+```{r write_CNYTCNYT_count_df}
+count_df_filename <- 
+  here::here("results_out", 
+             "H99_CNYTCNYT_counts.txt")
+
+write_lines(c(
+  "# H99_CNYTCNYT_counts.txt",
+  "# Counts of Ssd1-binding motif CNYTCNYT in Cryptococcus neoformans H99 messenger RNAs",
+  "# mRNA sequences taken from Wallace, Maufrais, et al 2020, https://doi.org/10.5281/zenodo.3627875",
+  "# Edward Wallace, Edward.Wallace@ed.ac.uk, 2024",
+  "#",
+  "# Columns",
+  "#   id:          Gene id, CNAG_00001 etc.",
+  "#   count_5UTR:  CNYTCNYT counts in annotated 5'UTR",
+  "#   length_5UTR: length in nt of annotated 5'UTR",
+  "#   count_CDS:   CNYTCNYT counts in annotated coding sequence (CDS)",
+  "#   length_CDS: length in nt of annotated CDS",
+  "#   count_3UTR:  CNYTCNYT counts in annotated 3'UTR",
+  "#   length_3UTR: length in nt of annotated 3'UTR",
+  "#   count_mRNA:  CNYTCNYT counts in annotated 5'UTR = count_5UTR + count_CDS + count_mRNA",
+  "#   length_mRNA: length in nt of annotated mRNA = length_5UTR + length_CDS + length_3UTR",
+  "#"),
+  count_df_filename)
+
+write_tsv(CNYTCNYT_count_df, 
+          count_df_filename,
+          append = TRUE,
+          col_names = TRUE)
+```
+
+
+# Which genes have highest counts?
+
+## In 5'UTR
+
+```{r high_count_5UTR, results="asis"}
+arrange(CNYTCNYT_count_df, desc(count_5UTR)) %>%
+    head(n = 20) %>%
+    knitr::kable()
+```
+
+## In CDS
+
+```{r high_count_CDS, results="asis"}
+arrange(CNYTCNYT_count_df,desc(count_CDS)) %>%
+    head(n = 20) %>%
+    knitr::kable()
+```
+
+## In 3'UTR
+
+```{r high_count_3UTR, results="asis"}
+arrange(CNYTCNYT_count_df,desc(count_3UTR)) %>%
+    head(n = 20) %>%
+    knitr::kable()
+```
+
+## In mRNA overall
+
+```{r high_count_mRNA, results="asis"}
+arrange(CNYTCNYT_count_df,desc(count_mRNA)) %>%
+    head(n = 20) %>%
+    knitr::kable()
+```
+
+# Which genes have highest density?
+
+I.E. Counts per unit length
+
+## Density in 5'UTR
+
+```{r high_density_5UTR, results="asis"}
+arrange(CNYTCNYT_count_df,desc(count_5UTR/length_5UTR)) %>%
+    head(n = 20) %>%
+    knitr::kable()
+```
+
+## Density in CDS
+
+```{r high_density_CDS, results="asis"}
+arrange(CNYTCNYT_count_df,desc(count_CDS/length_CDS)) %>%
+    head(n = 20) %>%
+    knitr::kable()
+```
+
+## Density in 3'UTR
+
+```{r high_density_3UTR, results="asis"}
+arrange(CNYTCNYT_count_df,desc(count_3UTR/length_3UTR)) %>%
+    head(n = 20) %>%
+    knitr::kable()
+```
+
+## Density in mRNA overall
+
+```{r high_density_mRNA, results="asis"}
+arrange(CNYTCNYT_count_df,desc(count_mRNA/length_mRNA)) %>%
+    head(n = 20) %>%
+    knitr::kable()
+```
+
+
+# Plot distribution of counts per gene as histogram
+
+```{r CNYTCNYT_ctdist,fig.width=4,fig.height=2.5}
+CNYT_mRNA_mean <- CNYTCNYT_count_df %>%
+    pull(count_mRNA) %>%
+    mean()
+
+CNYT_mRNA_var <- CNYTCNYT_count_df %>%
+    pull(count_mRNA) %>%
+    var()
+
+ggplot(data = CNYTCNYT_count_df, aes(x = count_mRNA)) +
+    geom_bar(width = 1, aes(y = ..prop..), stat = "count", group = 1) +
+    geom_line(data = tibble(),
+              aes(x = 0:20, y = dpois(0:20, lambda=CNYT_mRNA_mean)),
+              colour = "blue") + 
+    scale_x_continuous(limits = c(-0.5,20), oob = scales::squish) +
+  coord_cartesian(expand = FALSE)
+```
+
+Blue line shows Poisson distribution; this is overdispersed relative to. Poisson distribution, which would be expected given the variability in length.
+
+
+## Plot cumulative distribution, highlighting genes of interest
+
+```{r CNYTCNYT_cumdist,fig.width=4,fig.height=5}
+
+genes_of_interest = tibble(gene = c("MBS1", "SWI6"),
+                           id = c("CNAG_07464", "CNAG_01438"))
+
+left_join(genes_of_interest,
+                              CNYTCNYT_count_df)
+
+CNYTCNYT_cumdist_mRNA <- 
+ggplot(data = CNYTCNYT_count_df, aes(x = count_mRNA)) +
+    stat_ecdf() +
+    scale_y_continuous("Cumulative number\nof mRNAs",
+                       limits = c(0,1),
+                       expand = expansion(0, 0)) +
+    scale_x_continuous("CNYTCNYT counts per mRNA",
+                       limits = c(0,20), oob = scales::squish,
+                       expand = expansion(0, 0)) +
+  # geom_text(data = left_join(genes_of_interest,
+  #                             CNYTCNYT_count_df),
+  #           aes(label = gene),
+  #           y = 0.1,
+  #           angle = 90, colour = "blue") +
+    annotate(label = "MBS1, SWI6",
+             geom = "text",
+            x = 6, y = 0.01, hjust = 0,
+            angle = 90, colour = "blue") +
+  coord_cartesian(clip = "off")
+
+CNYTCNYT_cumdist_5UTR <- 
+ggplot(data = CNYTCNYT_count_df, aes(x = count_5UTR)) +
+    stat_ecdf() +
+    scale_y_continuous("Cumulative proportion\nof mRNAs",
+                       limits = c(0,1),
+                       expand = expansion(0, 0)) +
+    scale_x_continuous("CNYTCNYT counts per 5'UTR",
+                       limits = c(0,20), oob = scales::squish,
+                       expand = expansion(0, 0)) +
+  # geom_text(data = left_join(genes_of_interest,
+  #                             CNYTCNYT_count_df),
+  #           aes(label = gene),
+  #           y = 0.1,
+  #           angle = 90, colour = "blue") +
+    annotate(label = "MBS1, SWI6",
+             geom = "text",
+            x = 1, y = 0.01, hjust = 0,
+            angle = 90, colour = "blue") +
+  coord_cartesian(clip = "off")
+
+plot_grid(CNYTCNYT_cumdist_mRNA,
+          CNYTCNYT_cumdist_5UTR,
+          ncol = 1,
+          align = "hv")
+
+here::here("results_out", "CNYTCNYT_cumdist_plot.png") %>%
+  ggsave(plot = last_plot(), height = 5, width = 4)
+```
+
+Figure: Numbers of predicted Ssd1-binding motifs on Cryptococcos messenger RNAs, shown as cumulative distribution.
+Motifs are predicted as counts of CNYTCNYT in Cryptococcus H99, using UTR annotations from Wallace (2020).
+MBS1 and SWI6 each have 6 predicted Ssd1-binding motifs in the mRNA, of which 1 is in the 5' UTR.
+This is the `r ({ nrow(CNYTCNYT_count_df %>% filter(count_mRNA < 6)) / nrow(CNYTCNYT_count_df) } * 100 ) %>% round() `th percentile for whole mRNAs and `r ({ nrow(CNYTCNYT_count_df %>% filter(count_5UTR < 1)) / nrow(CNYTCNYT_count_df) } * 100 ) %>% round() `th percentile for 5'UTRs.
+
+## Cumulative distribution by density (motifs per mRNA)
+
+```{r CNYTCNYT_density_cumdist,fig.width=4,fig.height=2.5}
+
+ggplot(data = CNYTCNYT_count_df, 
+       aes(x = count_mRNA/length_mRNA * 100)) +
+    stat_ecdf() +
+    scale_y_continuous("Cumulative number\nof mRNAs",
+                       limits = c(0,1),
+                       expand = expansion(0, 0)) +
+    scale_x_continuous("CNYTCNYT motifs per 100nt mRNA",
+                       limits = c(0,1), 
+                       oob = scales::squish,
+                       expand = expansion(0, 0)) +
+  geom_text(data = left_join(genes_of_interest,
+                              CNYTCNYT_count_df),
+            aes(label = gene),
+            y = 0.1,
+            angle = 90, colour = "blue") +
+  coord_cartesian(clip = "off")
+```
+
+## Scatter plot, count vs length
+
+```{r CNYTCNYT_count_scatter,fig.width=4,fig.height=3.5}
+
+ggplot(data = CNYTCNYT_count_df, 
+       aes(x = length_mRNA, y = count_mRNA)) +
+  geom_point(alpha = 0.1) + 
+  scale_y_continuous("Cumulative number\nof mRNAs",
+                     limits = c(0,20),
+                     oob = scales::squish,
+                     expand = expansion(0, 0)) +
+  scale_x_log10("mRNA length") +
+  geom_point(data = left_join(genes_of_interest,
+                             CNYTCNYT_count_df),
+            aes(label = gene),
+            colour = "blue", size = 2) +
+  coord_cartesian(clip = "off")
+```
+
+
+
+# Write lists of genes for GO search
+
+```{r gene_list_output}
+id_file_CNYTCNYT_mRNA_80pc <- 
+  here::here("results_out", 
+             "H99_id_list_CNYTCNYT_mRNA_80pc.txt")
+
+CNYTCNYT_count_df %>%
+    filter(percent_rank(count_mRNA) >= 0.8) %>%
+    pull(id) %>%
+    write_lines(file = id_file_CNYTCNYT_mRNA_80pc)
+
+id_file_CNYTCNYT_mRNA_95pc <- 
+  here::here("results_out", 
+             "H99_id_list_CNYTCNYT_mRNA_95pc.txt")
+
+CNYTCNYT_count_df %>%
+    filter(percent_rank(count_mRNA) >= 0.95) %>%
+    pull(id) %>%
+    write_lines(file = id_file_CNYTCNYT_mRNA_95pc)
+
+
+id_file_CNYTCNYT_5UTR_80pc <- 
+  here::here("results_out", 
+             "H99_id_list_CNYTCNYT_5UTR_80pc.txt")
+
+CNYTCNYT_count_df %>%
+    filter(percent_rank(count_5UTR) >= 0.8) %>%
+    pull(id) %>%
+    write_lines(file = id_file_CNYTCNYT_5UTR_80pc)
+
+id_file_CNYTCNYT_5UTR_95pc <- 
+  here::here("results_out", 
+             "H99_id_list_CNYTCNYT_5UTR_95pc.txt")
+
+CNYTCNYT_count_df %>%
+    filter(percent_rank(count_5UTR) >= 0.95) %>%
+    pull(id) %>%
+    write_lines(file = id_file_CNYTCNYT_5UTR_95pc)
+
+```
+
+Next, I did a GO term finder search of these genelists on the [princeton generic GO term finder](https://go.princeton.edu/GOTermFinder/), using terms from [pombase](https://www.pombase.org/).
+
+Cite PMID: 15297299
+
+> "GO::TermFinder--open source software for accessing Gene Ontology information and finding significantly enriched Gene Ontology terms associated with a list of genes." Boyle et al, Bioninformatics (2004)
+
+That search found significantly enriched GO terms including cell wall, cell periphery, and intrinsic component of membrane, (component) in genes with at least 2x CNYTCNYT motifs in the 100nt upstream, file `Sp_id_list_CNYTCNYT2_up100.txt`. Results are saved in the file `Sp_goFinderResult_component_pombase_id_list_CNYTCNYT2_up100.txt`.
+
+
+
+
+
+## Report session info with version numbers of each package
+
+```{r session_info}
+sessionInfo()
+```
+
