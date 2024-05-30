@@ -249,10 +249,10 @@ left_join(genes_of_interest,
 CNYTCNYT_cumdist_mRNA <- 
 ggplot(data = CNYTCNYT_count_df, aes(x = count_mRNA)) +
     stat_ecdf() +
-    scale_y_continuous("Cumulative number\nof mRNAs",
+    scale_y_continuous("Cumulative proportion\nof mRNAs",
                        limits = c(0,1),
                        expand = expansion(0, 0)) +
-    scale_x_continuous("CNYTCNYT counts per mRNA",
+    scale_x_continuous("CNYTCNYT count in mRNA",
                        limits = c(0,20), oob = scales::squish,
                        expand = expansion(0, 0)) +
   # geom_text(data = left_join(genes_of_interest,
@@ -272,7 +272,7 @@ ggplot(data = CNYTCNYT_count_df, aes(x = count_5UTR)) +
     scale_y_continuous("Cumulative proportion\nof mRNAs",
                        limits = c(0,1),
                        expand = expansion(0, 0)) +
-    scale_x_continuous("CNYTCNYT counts per 5'UTR",
+    scale_x_continuous("CNYTCNYT count in 5'UTR",
                        limits = c(0,20), oob = scales::squish,
                        expand = expansion(0, 0)) +
   # geom_text(data = left_join(genes_of_interest,
@@ -295,7 +295,7 @@ here::here("results_out", "CNYTCNYT_cumdist_plot.png") %>%
   ggsave(plot = last_plot(), height = 5, width = 4)
 ```
 
-Figure: Numbers of predicted Ssd1-binding motifs on Cryptococcos messenger RNAs, shown as cumulative distribution.
+Figure: Numbers of predicted Ssd1-binding motifs on Cryptococcus messenger RNAs, shown as cumulative distribution.
 Motifs are predicted as counts of CNYTCNYT in Cryptococcus H99, using UTR annotations from Wallace (2020).
 MBS1 and SWI6 each have 6 predicted Ssd1-binding motifs in the mRNA, of which 1 is in the 5' UTR.
 This is the `r ({ nrow(CNYTCNYT_count_df %>% filter(count_mRNA < 6)) / nrow(CNYTCNYT_count_df) } * 100 ) %>% round() `th percentile for whole mRNAs and `r ({ nrow(CNYTCNYT_count_df %>% filter(count_5UTR < 1)) / nrow(CNYTCNYT_count_df) } * 100 ) %>% round() `th percentile for 5'UTRs.
